@@ -13,6 +13,9 @@ local help        = require('help')
 local state          = require('lib.state')
 local ui_panels      = require('lib.ui_panels')
 local ui_settings    = require('lib.ui_settings')
+local layouts        = require('lib.layouts')
+local all_filter     = require('lib.all_filter')
+local chat_rules     = require('lib.chat_rules')
 local combat_packets = require('lib.combat_packets')
 local ffi            = require('ffi')
 
@@ -169,6 +172,8 @@ function M.register()
 		if allSettings.PacketFilterEnabled2[1] then
 			pcall(combat_packets.refresh_snapshot)
 		end
+		-- A stable resolution/character change rebuilds through the normal reload path.
+		if layouts.tick() then return end
 		-- Per-frame caches (avoids repeated lookups).
 		local fcw1, fcw2, fcw3 = fcw[1], fcw[2], fcw[3]
 		local _fh  = allSettings.fontSettings.font_height
@@ -309,11 +314,10 @@ function M.register()
 			uiw.LastMemValue = uiw.MemValue;
 		
 		
-			-- Per-frame poke that pins the legacy chat closed.  Skipped
-			-- when the user has "Show with legacy chat" enabled so the
-			-- legacy window can animate open / closed on its own timer
-			-- alongside FancyChat.
-			if (not fcw1.HideChat and not allSettings.ShowWithLegacy[1]) then
+			-- Let native NPC dialogue use its normal window timing, including
+			-- pauses between pages and ambient speech outside a cutscene.
+			-- ShowWithLegacy still leaves the window alone for every channel.
+			if chat_rules.should_pin_legacy(allSettings, fcw1.HideChat, par.InEvent) then
 
 				local ptr = ashita.memory.read_uint32(uiw.WinPtr1);
 				if (ptr ~= 0) then
@@ -692,7 +696,9 @@ function M.register()
 				imgui.SetNextWindowSize({ fcw1.BG_W, ro.RectBG[1].settings.height+16 });
 				imgui.SetNextWindowSizeConstraints({ fcw1.BG_W, ro.RectBG[1].settings.height+16 }, { FLT_MAX, FLT_MAX, });
 			
+				layouts.before_window(1)
 				imgui.Begin('FancyChat_ChatBG_'+fcw1.PlayerName, true, bit_bor(fcw1.windowFlagsChatBG, allSettings.LockWindowPos[1] and FLAG_WinNoMove or 0));
+				layouts.record_window(1)
 			-- Setting variables to position the chat window elements --
 			
 			
@@ -786,8 +792,9 @@ function M.register()
 			
 			
 			-- Setting up line highlighting --
+				-- Clear the previous line even when the pointer leaves the visible chat.
+				fcw1.HoverLine = -1;
 				if IsRectHovered(ro.RectBG[1].settings,0) then
-					fcw1.HoverLine = -1;
 					local parsedUrl = '';
 					local lineOffsetBase = (fcw1.BG_H/120)+(_fh)
 					for HL_i = 0, allSettings.ChatLines-1 do
@@ -843,7 +850,8 @@ function M.register()
 				
 				end 
 			
-				if (fcw1.HoverLine > 0 and imIsMouseClicked(FLAG_MouseLeft)) then fcw1.Clicking = true; end
+				if (fcw1.HoverLine > 0 and imIsMouseClicked(FLAG_MouseLeft)
+					and (imGetIO().KeyAlt or imGetIO().KeyShift or imGetIO().KeyCtrl)) then fcw1.Clicking = true; end
 			
 				if (fcw1.HoverLine > 0  and iwIsWindowHovered(FLAG_HoveredRectOnly)) then
 				
@@ -884,7 +892,7 @@ function M.register()
 					end
 					if (fcw1.Clicking and imIsMouseReleased(FLAG_MouseLeft)) then
 					fcw1.Clicking = false;
-						if(copyBufferText ~=nil) then
+						if(copyBufferText ~=nil and #copyBufferText > 0) then
 							if imGetIO().KeyCtrl then
 								-- Ctrl + left-click: open the /sea zone
 								-- popup at the cursor.  Skip the copy /
@@ -923,15 +931,14 @@ function M.register()
 								else
 									print('Notepad notes full [10/10]')
 								end
-							else
+							elseif imGetIO().KeyAlt then
 								utils.SetClipboardText(utils.RevertShiftJIS(copyBufferText))
-								AshitaCore:GetChatManager():QueueCommand(1, "/echo Text successfully copied to clipboard!");
 							end
 						end
 					end
 				end
 		
-				if (fcw1.Clicking and (imIsMouseDragging(FLAG_MouseLeft) or not imIsMouseDown(FLAG_MouseLeft) )) then fcw1.Clicking = false; end
+				if (fcw1.Clicking and (fcw1.HoverLine <= 0 or imIsMouseDragging(FLAG_MouseLeft) or not imIsMouseDown(FLAG_MouseLeft) )) then fcw1.Clicking = false; end
 		
 
 			-- Setting up line scrolling --
@@ -1092,7 +1099,7 @@ function M.register()
 					if imgui.Begin('##fc1_help_tooltip', true, _helpFlags) then
 						imgui.Text('FancyChat - quick reference')
 						imgui.Separator()
-						imgui.BulletText('L-Click on a chat line          Copy text to clipboard')
+						imgui.BulletText('Alt + L-Click on a chat line    Copy text to clipboard (silent)')
 						imgui.BulletText('Ctrl + L-Click on a zone name   Open zone search & map popup')
 						imgui.BulletText('Shift + L-Click on a chat line  Save line to Notepad (max 10)')
 						imgui.BulletText('L-Click on a [link] tag         Open URL in browser')
@@ -1495,7 +1502,7 @@ function M.register()
 				end
 			
 			
-				if allSettings.SelectedTab2 == 'All' and allSettings.HideCombatFromAll[1] then b.ChatBufferN[2]=b.ChatBufferN_AllAlt;  end
+				if allSettings.SelectedTab2 == 'All' and all_filter.enabled() then b.ChatBufferN[2]=b.ChatBufferN_AllAlt;  end
 			
 				if ((not uiw.LegacyChatOpen or allSettings.ShowWithLegacy[1]) and not fcw1.HideChat and not fcw1.Closing and fcw1.autoHideFade < 1 and not fcw3.BigMode) then
 				
@@ -1503,7 +1510,9 @@ function M.register()
 					imgui.SetNextWindowSize({ fcw2.BG_W, ro.RectBG[2].settings.height+16 } );
 					imgui.SetNextWindowSizeConstraints({ fcw2.BG_W, ro.RectBG[2].settings.height+16 }, { FLT_MAX, FLT_MAX, } );
 				
+					layouts.before_window(2)
 					imgui.Begin('FancyChat_ChatBG2_'+fcw1.PlayerName, true, bit_bor(fcw1.windowFlagsChatBG, allSettings.LockWindowPos[1] and FLAG_WinNoMove or 0));
+					layouts.record_window(2)
 				
 				-- Setting variables to position the chat window elements --
 					local positionStartX, positionStartY = imgui.GetCursorScreenPos();
@@ -1587,8 +1596,8 @@ function M.register()
 					if fcw2.Dragging and imIsMouseReleased then fcw2.Dragging = false end;
 
 				-- Setting up line highlighting --
+					fcw2.HoverLine = -1;
 					if IsRectHovered(ro.RectBG[2].settings,0) then
-						fcw2.HoverLine = -1;
 						local parsedUrl = '';
 						local lineOffsetBase = (fcw2.BG_H/120)+(_fh)
 						for HL_i = 0, allSettings.ChatLines-1 do
@@ -1640,7 +1649,8 @@ function M.register()
 						end
 					end
 				
-					if (fcw2.HoverLine > 0 and imIsMouseClicked(FLAG_MouseLeft)) then fcw2.Clicking = true; end
+					if (fcw2.HoverLine > 0 and imIsMouseClicked(FLAG_MouseLeft)
+						and (imGetIO().KeyAlt or imGetIO().KeyShift)) then fcw2.Clicking = true; end
 				
 					if (fcw2.HoverLine > 0 and iwIsWindowHovered(FLAG_HoveredRectOnly)) then
 					
@@ -1682,7 +1692,7 @@ function M.register()
 						end
 						if (fcw2.Clicking and imIsMouseReleased(FLAG_MouseLeft)) then
 							fcw2.Clicking = false;
-							if(copyBufferText ~=nil) then
+							if(copyBufferText ~=nil and #copyBufferText > 0) then
 								if imGetIO().KeyShift then
 									if #allSettings.Notes < 10 and #copyBufferText > 0 then
 										table_insert(allSettings.Notes, copyBufferText)
@@ -1691,15 +1701,14 @@ function M.register()
 									else
 										print('Notepad notes full [10/10]')
 									end
-								else
+								elseif imGetIO().KeyAlt then
 									utils.SetClipboardText(utils.RevertShiftJIS(copyBufferText))
-									AshitaCore:GetChatManager():QueueCommand(1, "/echo Text successfully copied to clipboard!");
 								end
 							end
 						end
 					end
 			
-					if (fcw2.Clicking and (imIsMouseDragging(FLAG_MouseLeft) or not imIsMouseDown(FLAG_MouseLeft) )) then fcw2.Clicking = false; end
+					if (fcw2.Clicking and (fcw2.HoverLine <= 0 or imIsMouseDragging(FLAG_MouseLeft) or not imIsMouseDown(FLAG_MouseLeft) )) then fcw2.Clicking = false; end
 				
 					local scrollOffset= (fcw2.BG_H/120);
 

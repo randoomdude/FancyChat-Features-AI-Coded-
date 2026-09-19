@@ -12,6 +12,7 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 local chat = require('chat');
 local d3d = require('d3d8');
 local ffi = require('ffi');
+local textcodec = require('lib.textcodec');
 
 local default_font = 'Arial';
 local default_settings = {
@@ -57,7 +58,9 @@ local function CreateFontData(settings)
     data.GradientStyle = settings.gradient_style;
     data.GradientColor = uint32_of(settings.gradient_color);
     data.FontFamily    = settings.font_family;
-    data.FontText      = settings.text;
+    -- Render portable braces for auto-translate delimiters. Keep the original
+    -- U+276E/U+276F sentinels in settings.text for item previews and copying.
+    data.FontText      = settings.text:gsub('\226\157\174', '{'):gsub('\226\157\175', '}');
     return data;
 end
 
@@ -111,7 +114,18 @@ function object:get_texture()
         if (self.settings.text == '') then
             return;
         end
-        local tx = self.renderer.CreateTextureColor(self.interface, CreateFontData(self.settings));
+        local data = CreateFontData(self.settings);
+        -- GDI path rendering does not reliably supply CJK fallback for Consolas.
+        -- Select a Japanese-capable family only for lines that need it.
+        if textcodec.has_japanese(self.settings.text) then
+            for _, family in ipairs({'Meiryo', 'Yu Gothic', 'MS Gothic'}) do
+                if GetFontAvailable(self.renderer, family) then
+                    data.FontFamily = family;
+                    break;
+                end
+            end
+        end
+        local tx = self.renderer.CreateTextureColor(self.interface, data);
         if (tx.Texture == nil) or (tx.Width == 0) or (tx.Height == 0) then
             return;
         else

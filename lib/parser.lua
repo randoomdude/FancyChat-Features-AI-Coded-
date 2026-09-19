@@ -55,6 +55,9 @@ require('common')
 local utils   = require('utils')
 local targets = require('targets')
 local state   = require('lib.state')
+local all_filter = require('lib.all_filter')
+local chat_rules = require('lib.chat_rules')
+local textcodec = require('lib.textcodec')
 
 local fcw         = state.fcw
 local uiw         = state.uiw
@@ -746,7 +749,8 @@ parseThis = function(e, e_message)
 	end
 
 	-- Block-flagging: hide the message in the legacy chat if requested.
-	if not fcw[1].HideChat and not uiw.LegacyChatOpen then
+	if not fcw[1].HideChat and not uiw.LegacyChatOpen
+		and not (chat_rules.preserve_npc(allSettings) and chat_rules.is_npc(par.LastMode)) then
 		if par.MessageMode ~= 151 and par.MessageMode ~= 150 then
 			if (string_find(par.LastMode, 'combat') or par.LastMode == 'filtered') and allSettings.blockCombat[1] then
 				e.blocked = true
@@ -1061,7 +1065,7 @@ parseThis = function(e, e_message)
 		end
 
 		-- Custom tab membership: the user can opt-in NPC / LS / Party
-		-- / Tell / Shout into the Custom tab via Settings.  When the
+		-- / Tell / Shout / System into the Custom tab via Settings.  When the
 		-- Linkshell tab is split into L1 / L2, slot [2] (combined LS)
 		-- is bypassed and slots [6] (L1) / [7] (L2) drive the linkshell
 		-- routing instead — exactly mirroring how the tab itself is
@@ -1071,7 +1075,8 @@ parseThis = function(e, e_message)
 		if (ctm[1] and string_find(par.LastMode, 'NPC$'))
 		or (ctm[3] and par.tabmode == 5)
 		or (ctm[4] and par.tabmode == 6)
-		or (ctm[5] and par.tabmode == 7) then
+		or (ctm[5] and par.tabmode == 7)
+		or (ctm[8] and chat_rules.is_system(par.LastMode)) then
 			par.isCustom = true
 		elseif allSettings.SplitLinkshellTab[1] then
 			if (ctm[6] and par.tabmode == 9) or (ctm[7] and par.tabmode == 10) then
@@ -1115,8 +1120,15 @@ parseThis = function(e, e_message)
 			local special_text  = ''
 			local special_color = ''
 
-			local bytesLine = utils_CountExtraBytesT(newText)
-			local cutIdx = math_min(allSettings.chatLineMaxL + bytesLine[math_min(allSettings.chatLineMaxL, #bytesLine)], textLeft)
+			local japanese_line = textcodec.has_japanese(newText)
+			local cutIdx
+			if japanese_line then
+				textLeft = #newText
+				cutIdx = textcodec.wrap_index(newText, allSettings.chatLineMaxL)
+			else
+				local bytesLine = utils_CountExtraBytesT(newText)
+				cutIdx = math_min(allSettings.chatLineMaxL + bytesLine[math_min(allSettings.chatLineMaxL, #bytesLine)], textLeft)
+			end
 
 			-- Atomicity for legacy colour escapes: never let a slice
 			-- end on the lead byte of \x1E\NN or \x1F\NN with the
@@ -1134,7 +1146,7 @@ parseThis = function(e, e_message)
 
 			local lineBreak = ''
 
-			if L_i < n_lines and string_byte(newText, cutIdx) ~= 32 and cutIdx ~= textLeft then
+			if not japanese_line and L_i < n_lines and string_byte(newText, cutIdx) ~= 32 and cutIdx ~= textLeft then
 				cutIdx = utils_utf8split(newText, cutIdx)
 				if not isCombatMsg and urlText == '' and string_byte(newText, cutIdx) ~= 32 and cutIdx < #newText and string_byte(newText, cutIdx + 1) ~= 32 then
 					lineBreak = '-'
@@ -1186,7 +1198,7 @@ parseThis = function(e, e_message)
 				end
 			end
 
-			if L_i == n_lines then
+			if not japanese_line and L_i == n_lines then
 				if string_byte(newText, cutIdx) ~= 32 and cutIdx < textLeft then
 					cutIdx = utils_utf8split(newText, cutIdx)
 					if not isCombatMsg and urlText == '' and string_byte(newText, cutIdx) ~= 32 and cutIdx < #newText and string_byte(newText, cutIdx + 1) ~= 32 then
@@ -1213,6 +1225,13 @@ parseThis = function(e, e_message)
 						n_lines = n_lines + 1
 					end
 				end
+			end
+
+			if japanese_line then
+				cutIdx = textcodec.safe_end(newText, cutIdx)
+				lineBreak = ''
+				if L_i == n_lines and cutIdx < #newText then n_lines = n_lines + 1 end
+				if cutIdx == #newText and urlText ~= '' then auxURL_text = '[link]' end
 			end
 
 			-- MCList accumulates {start, end, color} tuples that
@@ -1454,7 +1473,7 @@ parseThis = function(e, e_message)
 				end
 
 				-- Mirror the same line into the AllAlt buffer when it
-				-- isn't combat/custom (so the All-without-combat tab
+				-- passes the shared All-tab filters (so the filtered All tab
 				-- works), into the per-tab buffer (Combat/LS/Party/...)
 				-- and into the Custom buffer when applicable.  Each
 				-- branch hoists its target buffer alias once (#2).
@@ -1464,8 +1483,9 @@ parseThis = function(e, e_message)
 				local last_auxColor = buf1.auxColor[#buf1.auxColor]
 				local last_url      = buf1.url     [#buf1.url]
 
-				if par.tabmode and (par.tabmode ~= 3 and not par.isCustom) then
+				if not all_filter.hidden(par.LastMode) then
 					local buf2 = b.ChatBuffer[2][2]
+					table_insert(buf2.mode, tostring(par.MessageMode)..'|'..par.LastMode)
 					table_insert(buf2.text,     last_text)
 					table_insert(buf2.color,    last_color)
 					table_insert(buf2.auxText,  last_auxText)
@@ -1494,21 +1514,22 @@ parseThis = function(e, e_message)
 					-- Two extra slots (9, 10) for L1 / L2 in split mode.
 					local cleanupRanges = {b.CleanupThresh, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 					for tr = 1, b.CleanupThresh do
+						local cleanupMode = all_filter.mode(buf1.mode[tr])
+						if not all_filter.hidden(cleanupMode) then cleanupRanges[2] = cleanupRanges[2] + 1 end
 						local tabremove = 0
 						local cremove   = 0
-						if string_find(buf1.mode[tr], '@$')         ~= nil then cremove = 8 end
-						if string_find(buf1.mode[tr], '^combat')    ~= nil then tabremove = 3
-						elseif string_find(buf1.mode[tr], '^linkshell2') ~= nil then
+						if string_find(cleanupMode, '@$')         ~= nil then cremove = 8 end
+						if string_find(cleanupMode, '^combat')    ~= nil then tabremove = 3
+						elseif string_find(cleanupMode, '^linkshell2') ~= nil then
 							tabremove = allSettings.SplitLinkshellTab[1] and 10 or 4
-						elseif string_find(buf1.mode[tr], '^linkshell') ~= nil then
+						elseif string_find(cleanupMode, '^linkshell') ~= nil then
 							tabremove = allSettings.SplitLinkshellTab[1] and 9 or 4
-						elseif string_find(buf1.mode[tr], '^party')     ~= nil then tabremove = 5
-						elseif string_find(buf1.mode[tr], '^tell')      ~= nil then tabremove = 6
-						elseif string_find(buf1.mode[tr], '^shout')     ~= nil then tabremove = 7
+						elseif string_find(cleanupMode, '^party')     ~= nil then tabremove = 5
+						elseif string_find(cleanupMode, '^tell')      ~= nil then tabremove = 6
+						elseif string_find(cleanupMode, '^shout')     ~= nil then tabremove = 7
 						else tabremove = 0
 						end
 						if tabremove > 0 then
-							if tabremove ~= 3 then cleanupRanges[2] = cleanupRanges[2] + 1 end
 							cleanupRanges[tabremove] = cleanupRanges[tabremove] + 1
 						end
 						if cremove > 0 then
@@ -1528,6 +1549,7 @@ parseThis = function(e, e_message)
 						tr = tr + 1
 					end
 					BulkRemove(b.ChatBuffer[3][2], b.CleanupThresh)
+					all_filter.trim_combat(line)
 					BulkRemoveCombat(buf1, line)
 				end
 			end
@@ -1535,7 +1557,7 @@ parseThis = function(e, e_message)
 		end
 		n_lines = n_lines - skipped
 		b.ChatBufferN_All = b.ChatBufferN_All + n_lines
-		if par.tabmode ~= 3 and not par.isCustom then b.ChatBufferN_AllAlt = b.ChatBufferN_AllAlt + n_lines end
+		if not all_filter.hidden(par.LastMode) then b.ChatBufferN_AllAlt = b.ChatBufferN_AllAlt + n_lines end
 		if allSettings.SelectedTab:find('^All') or allSettings.SelectedTab2:find('^All') then ResetAutoHideTimer() end
 
 		if string_find(par.LastMode, '^combat') then
@@ -1579,8 +1601,8 @@ _G.parseThis = parseThis
 
 function M.register()
 	-- =====================================================================
-	-- text_in: chat-message intercept.  Filters by mode (suppresses 152
-	-- internal-AT, conditionally blocks 190 legacy chat passthrough),
+	-- text_in: chat-message intercept. Skips the native-only mode 152
+	-- in FancyChat, conditionally blocks 190 legacy chat passthrough,
 	-- captures every line into b.OriginalBuffer (for DumpChat replay,
 	-- capped at 300 with chunk-trim), parses auto-translate inline,
 	-- splits multi-line messages on LF, and dispatches each segment
@@ -1595,7 +1617,16 @@ function M.register()
 		local mode_pre = bit_band(e.mode, 0x000000FF)
 		local mode_str = tostring(mode_pre)
 
-		if mode_pre == 152 or e.blocked then e.blocked = true; return end
+		-- Respect blocks from earlier addons; never discard native NPC traffic
+		-- just because FancyChat does not render that channel itself.
+		if e.blocked then return end
+		local row = utils_modesDA[mode_pre + 1]
+		chat_rules.note_message(row and row[2])
+		if mode_pre == 152 then
+			if not chat_rules.preserve_npc(allSettings) and allSettings.blockAll[1]
+				and not (fcw[1].HideChat or uiw.LegacyChatOpen) then e.blocked = true end
+			return
+		end
 		if mode_pre == 190 then
 			if allSettings.blockAll[1] and not (fcw[1].HideChat or uiw.LegacyChatOpen) then
 				e.blocked = true
@@ -1628,7 +1659,7 @@ function M.register()
 		end
 
 		local e_message
-		if mode_pre < 20 or mode_pre > 212 then
+		if mode_pre < 20 or mode_pre >= 211 then
 			e_message = AshitaCore:GetChatManager():ParseAutoTranslate(e.message, true)
 		else
 			e_message = e.message

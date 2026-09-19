@@ -70,7 +70,7 @@ ffi.cdef[[
 -- AND the addon folder is named exactly "fancychat".  pcall'd so an
 -- older gdifonttexture.dll without the export doesn't error the load.
 pcall(function()
-    renderer.SetFontFolder(string.gsub(libPath, 'include.lua', ''));
+    renderer.SetFontFolder((string.gsub(libPath, 'include.lua', '')));
 end);
 local interface = renderer.CreateFontManager(d3d.get_device());
 local objects = T{};

@@ -82,10 +82,10 @@ help.chatwindowPreview = {
 						  }
 help.chatwindowCopying = {
 								'Copying & Saving Chat Lines',
-								'Hovering a chat line softly highlights it; clicking it once with the left mouse button copies the full text of that line (and any related continuation lines from the same message) to the system clipboard. A confirmation echo appears in chat ("Text successfully copied to clipboard!"). Paste anywhere with Ctrl+V - Discord, browser, in-game /tell, etc.',
+								'Hovering a chat line softly highlights it. Hold Alt while clicking and releasing the left mouse button on the chat line to copy the full text of that line (and any related continuation lines from the same message) to the system clipboard. Copying is silent; ordinary left-clicks do not copy. Paste anywhere with Ctrl+V - Discord, browser, in-game /tell, etc.',
 								'Hold Shift and click a chat line to save it to the FancyChat Notepad instead of the clipboard. The Notepad keeps up to 10 entries; if the list is full when you try to add another, an "Notepad notes full [10/10]" notice is printed instead of the save.',
 								'Hold Ctrl and left-click a chat line that mentions one or more zone names to open the Zone Search & Maps popup at the cursor - quick wiki-page link, /sea command, and a per-zone map browser. See the "Zone Search & Maps" section below for the full breakdown.',
-								'When a chat line carries an embedded URL, FancyChat shows a small "[link]" marker next to the line\'s aux area. Clicking that marker (not the message text) opens the URL in your default browser; clicking the message text itself still copies normally.'
+								'When a chat line carries an embedded URL, FancyChat shows a small "[link]" marker next to the line\'s aux area. Clicking that marker opens the URL in your default browser; Alt-clicking the message text copies it to the clipboard.'
 						  }
 help.chatwindowCompactCombat = {
 								'Compact Combat Log',

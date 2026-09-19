@@ -19,6 +19,8 @@ local colorDesc      = state.colorDesc
 local gamepadButtons = state.gamepadButtons
 
 local M = {}
+local layouts = require('lib.layouts')
+local all_filter = require('lib.all_filter')
 
 -- Module-level cache of the filters/<kind>/ directory listing,
 -- keyed by kind ('combat' / 'other').  Populated lazily on the first
@@ -68,6 +70,13 @@ function M.draw_settings_panel()
 		----------------------------------------------------------------
 		-- Tab: Chat Window
 		----------------------------------------------------------------
+		if imgui.BeginTabItem('Layouts', nil) then
+			imguiWrap.BeginChild('##LayoutProfilesChild', {0, setsizey - 65}, true)
+			layouts.draw_editor()
+			imgui.EndChild()
+			imgui.EndTabItem()
+		end
+
 		if imgui.BeginTabItem('Chat Window', nil) then
 			imguiWrap.BeginChild('##Chat Window Child',
 				{(setsizex * 3.8 / 3.9) - (12 * (1 - (setsizex * 3.8 / 1920))) - 3, setsizey * 2.7 / 2.8 - 60}, true)
@@ -199,6 +208,8 @@ function M.draw_settings_panel()
 				if imgui.Checkbox('LS',   {set.CustomTabModes[2]}) then set.CustomTabModes[2] = not set.CustomTabModes[2] end imgui.SameLine()
 			end
 			if imgui.Checkbox('Shout',{set.CustomTabModes[5]}) then set.CustomTabModes[5] = not set.CustomTabModes[5] end
+			if imgui.Checkbox('System messages##CustomSystem', {set.CustomTabModes[8]}) then set.CustomTabModes[8] = not set.CustomTabModes[8] end
+			AddTooltip('System notices, server announcements, and echo messages. NPC dialogue is controlled separately by NPC.', 4)
 
 			imgui.Dummy({0, 10})
 			if imgui.Checkbox('Instant new line (skip scroll animation)##InstantChatScroll', {set.InstantChatScroll[1]}) then
@@ -248,7 +259,7 @@ function M.draw_settings_panel()
 				set.SecondChat[1]        = false
 				set.InstantChatScroll[1] = false
 				set.SplitLinkshellTab[1] = false
-				set.CustomTabModes       = T{false, false, false, false, false, false, false}
+				set.CustomTabModes       = T{false, false, false, false, false, false, false, false}
 			end
 
 			imgui.Dummy({0, 5})
@@ -686,7 +697,7 @@ function M.draw_settings_panel()
 			imgui.Dummy({0, 20})
 			imgui.Text('Other Interactions')
 			local interactions = {
-				{'Copy chat line to clipboard',         'Left-Click on a chat line'},
+				{'Copy chat line to clipboard (silent)', 'Alt + Left-Click on a chat line'},
 				{'Open URL in browser',                 'Left-Click on a [link] tag'},
 				{'Open zone map / search popup',        'Ctrl + Left-Click on a chat line containing a zone name'},
 				{'Save chat line to Notepad',           'Shift + Left-Click on a chat line  (max 10 notes)'},
@@ -854,8 +865,14 @@ function M.draw_settings_panel()
 			imguiWrap.BeginChild('##Extra Child',
 				{(setsizex * 3.8 / 3.9) - (12 * (1 - (setsizex * 3.8 / 1920))) - 3, setsizey * 2.7 / 2.8 - 60}, true)
 
+			if imgui.Checkbox('Show NPC dialogue in regular chat', {allSettings.ShowNPCInLegacy[1]}) then
+				allSettings.ShowNPCInLegacy[1] = not allSettings.ShowNPCInLegacy[1]
+				SaveSettings()
+			end
+			AddTooltip('Keeps NPC dialogue in the original FFXI window and lets it stay open during conversations. Overrides Block All for NPC dialogue; FancyChat tab filters still work independently. Applies to new dialogue immediately.', 4)
+			imgui.Dummy({0, 8})
 			imgui.Text('Block legacy chat messages')
-			AddTooltip('Blocks incoming messages to the legacy chat and only display them on FancyChat. This will block the window resize animation that makes it flicker when new chat messages arrive.', 0)
+			AddTooltip('Blocks incoming messages to the regular chat window. NPC dialogue is preserved when Show NPC dialogue in regular chat is enabled.', 0)
 			imgui.Dummy({0, 5})
 			imgui.Dummy({5, 0}) imgui.SameLine()
 			if imgui.Checkbox('All', {allSettings.blockAll[1]}) then
@@ -885,21 +902,11 @@ function M.draw_settings_panel()
 			imgui.Dummy({5, 0}) imgui.SameLine()
 			if imgui.Checkbox('Hide combat and custom logs from \'All\' tab.', {allSettings.HideCombatFromAll[1]}) then
 				allSettings.HideCombatFromAll[1] = not allSettings.HideCombatFromAll[1]
-				if allSettings.HideCombatFromAll[1] then
-					tab.Tabs[1] = 'AllAlt'
-					if allSettings.SelectedTab == 'All' then tab.NextTab = 'AllAlt' end
-					if allSettings.SecondChat[1] and allSettings.SelectedTab2 == 'All' then
-						tab.NextTab2 = 'AllAlt'
-					end
-				else
-					tab.Tabs[1] = 'All'
-					if allSettings.SelectedTab == 'AllAlt' then tab.NextTab = 'All' end
-					if allSettings.SecondChat[1] and allSettings.SelectedTab2 == 'AllAlt' then
-						tab.NextTab2 = 'All'
-					end
-				end
+				all_filter.refresh()
 				SaveSettings()
 			end
+			imgui.Dummy({0, 8})
+			all_filter.draw_options()
 			-- Filter mode selector.  Text-based = the three legacy
 			-- boolean toggles that use name-matching in the parser;
 			-- Packet-based = the 0x0028-driven hierarchy that's

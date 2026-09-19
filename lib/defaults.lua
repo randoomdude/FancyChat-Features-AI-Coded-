@@ -256,7 +256,7 @@ end
 function M.default_chat_buffer()
 	return T{
 		{'All',       T{text = T{}, mode = T{}, color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
-		{'AllAlt',    T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
+		{'AllAlt',    T{text = T{}, mode = T{}, color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
 		{'Combat',    T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
 		{'Linkshell', T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
 		{'Party',     T{text = T{},             color = T{}, auxText = T{}, auxColor = T{}, url = T{}}},
@@ -300,7 +300,8 @@ function M.default_settings()
 		-- Party, Tell, Shout.  Slots 6-7: L1, L2 (used only when
 		-- SplitLinkshellTab is on; ignored otherwise).  The UI shows
 		-- either slot 2 OR slots 6+7 depending on the split state.
-		CustomTabModes       = T{false, false, false, false, false, false, false},  -- npc, ls, party, tell, shout, L1, L2
+		-- Slot 8: System messages (shared with the Hide from All category).
+		CustomTabModes       = T{false, false, false, false, false, false, false, false},  -- npc, ls, party, tell, shout, L1, L2, system
 		ItemPreview          = T{true},
 		AutoHideWindow       = T{false},
 		AutoHideTimeMax      = 10,
@@ -333,10 +334,13 @@ function M.default_settings()
 		SelectedTab          = 'All',
 		SelectedTab2         = 'All',
 		HideCombatFromAll    = T{false},
+		HideFromAll = T{Unity=false, Shout=false, Say=false, Tell=false, Party=false, Linkshell1=false, Linkshell2=false, Emote=false, NPC=false, System=false},
 		SecondChat           = T{false},
 		chatLineMaxL         = 100,
 		ChatLines            = 8,
 		WindowPosOffset      = T{0, 0, 0, 0},
+		-- Optional extension; legacy flat layout fields remain the active layout.
+		LayoutProfiles       = T{},
 		defaultColor         = 0xFFFFFFFF,
 		ColorBlind           = T{false},
 		shortcutHide         = 46,
@@ -380,6 +384,8 @@ function M.default_settings()
 		-- toggling requires a Restart & apply.  Lives in the Chat
 		-- Window tab's restart-required group.
 		SplitLinkshellTab    = T{false},
+		-- Keep native NPC dialog visible even when other legacy chat is blocked.
+		ShowNPCInLegacy      = T{true},
 		blockAll             = T{false},
 		blockCombat          = T{false},
 		timeStamp            = T{true},
@@ -432,7 +438,7 @@ function M.default_settings()
 			box_width      = 0,
 			font_alignment = 0,
 			font_color     = 0xFFFFFFFF,
-			font_family    = 'Consolas',
+			font_family    = 'Meiryo',
 			font_flags     = gdi.FontFlags.Bold,
 			font_height    = 20,
 			gradient_color = 0x00000000,

@@ -25,9 +25,13 @@ local defaultColors  = state.defaultColors
 local gamepadButtons = state.gamepadButtons
 
 local M = {}
+local layouts = require('lib.layouts')
+local all_filter = require('lib.all_filter')
+local chat_rules = require('lib.chat_rules')
 
 -- Exposed as a global; callers still reach for SaveSettings() by name.
 function M.SaveSettings()
+	layouts.capture()
 	settings.save('allSettings')
 end
 _G.SaveSettings = M.SaveSettings
@@ -290,7 +294,7 @@ function M.register()
 
 		-- In-place merge so module aliases (lib/state.lua, lib/ui_panels.lua,
 		-- ...) continue to see the same table reference.
-		state.replace_allSettings(settings.load(allSettings, 'allSettings'))
+		state.replace_allSettings(settings.load(utils.cloneTable(allSettings), 'allSettings'))
 
 		-- Safety net: ensure every default-colour key is present in the
 		-- loaded allSettings.colors.  This matters when default_colors()
@@ -310,6 +314,9 @@ function M.register()
 		-- RepairSettings prunes obsolete keys and fixes type
 		-- mismatches before Sugar's table.merge runs on logout.
 		state.replace_allSettings(utils.RepairSettings(allSettingsOG, allSettings))
+
+		-- Select before any font objects or line buffers are allocated.
+		layouts.load()
 
 		if not allSettings.ver or allSettings.ver ~= addon.version then
 			allSettings.ver = addon.version
@@ -351,10 +358,11 @@ function M.register()
 		fcw[1].PlayerName = allSettings.PlayerName
 
 		-- Schema migration: older saved configs predate the L1 / L2
-		-- Custom-tab slots ([6] = L1, [7] = L2).  Pad with `false` so
+		-- and System Custom-tab slots ([6] = L1, [7] = L2, [8] = System).
+		-- Pad with `false` so
 		-- the parser's matching branch and the Settings UI checkboxes
 		-- can address those slots without a NIL guard.  Idempotent.
-		while #allSettings.CustomTabModes < 7 do
+		while #allSettings.CustomTabModes < 8 do
 			allSettings.CustomTabModes[#allSettings.CustomTabModes + 1] = false
 		end
 
@@ -485,6 +493,7 @@ function M.register()
 		end
 		for W_i = 1, 2 do
 			table.insert(b.ChatBuffer[W_i][2].text,     welcome)
+			table.insert(b.ChatBuffer[W_i][2].mode,     '0|system')
 			table.insert(b.ChatBuffer[W_i][2].color,    0xFFFFFFFF)
 			table.insert(b.ChatBuffer[W_i][2].auxText,  '')
 			table.insert(b.ChatBuffer[W_i][2].auxColor, 0xFF44CCFF)
@@ -496,7 +505,7 @@ function M.register()
 		-- Initial tab selection.
 		if allSettings.SelectedTab  ~= 'All' then tab.NextTab  = allSettings.SelectedTab  end
 		if allSettings.SelectedTab2 ~= 'All' then tab.NextTab2 = allSettings.SelectedTab2 end
-		if allSettings.HideCombatFromAll[1] then
+		if all_filter.enabled() then
 			tab.Tabs[1] = 'AllAlt'
 			if allSettings.SelectedTab == 'All' then tab.NextTab = 'AllAlt' end
 			if allSettings.SecondChat[1] and allSettings.SelectedTab2 == 'All' then
@@ -569,6 +578,7 @@ function M.register()
 			par.InEvent  = ashita.memory.read_uint8(ashita.memory.read_uint32(uiw.EventPtr + 1)) == 1
 			uiw.DialogCDStart = os.clock()
 		elseif e.id == 0x000B then
+			chat_rules.reset_npc()
 			fcw[1].Zoning = true
 			fcw[1].HasDoneServMes = true
 			uiw.MenuList = {}

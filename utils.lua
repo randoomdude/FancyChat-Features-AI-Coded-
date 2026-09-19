@@ -1467,8 +1467,7 @@ for tail = 0xA0, 0xC3 do
 end
 
 -- Bytes that ALWAYS introduce a 2-byte SJIS sequence.  A pair
--- starting with one of these but not present in FFXI_MAP is
--- silently dropped (lead+trail consumed, nothing emitted).
+-- starting with one of these uses the CP932 map when not overridden by FFXI_MAP.
 utils.SJIS_LEAD = {}
 for b = 0x81, 0x9F do utils.SJIS_LEAD[b] = true end
 for b = 0xE0, 0xEF do utils.SJIS_LEAD[b] = true end
@@ -2015,88 +2014,12 @@ utils.legacycolors2 = {
 	['\31\255'] = '\\§FFFFFFFFç\\',  -- (255,255,255)
 }
 
--- Single-pass byte walker.  Pure (no state access) so it's safe to
--- call from any context.  Per-byte classification:
---   0x1E / 0x1F     — legacy palette color escape (\x1E\NN /
---                     \x1F\NN, FFXI's two palette tables); drop
---                     the 2 bytes by default, OR PRESERVE them
---                     verbatim when respectLegacyColors=true so a
---                     downstream wrap-aware step can later turn
---                     them into 14-byte MC tokens (see parser.lua).
---   0x7F            — timed-message sentinel, drop 2 or 3 bytes
---   0x20-0x7E       — printable ASCII, emit verbatim
---   SJIS_LEAD       — try FFXI_MAP[lead..trail], drop pair if absent
---   >= 0xF0         — pre-existing UTF-8 (e.g. heart emoji); pass
---                     through with its 3 trail bytes
---   anything else   — drop
---
--- We deliberately do NOT inline the MC translation here even when
--- respectLegacyColors is on.  An MC token is 14 bytes; the chat-line
--- wrap math in parseThis cuts on raw byte indices and would slice
--- right through one if it landed inside.  Keeping the 2-byte legacy
--- escapes intact lets the wrap survive (worst case is a single split
--- escape, recovered by the post-wrap translation step).
+-- Preserve standard Japanese CP932 characters as well as FancyChat's game
+-- symbol overrides. The former byte walker dropped every unmapped SJIS pair.
+local textcodec = require('lib.textcodec')
 utils.TranscodeFFXI = function(text, compactCombat, respectLegacyColors)
-	local map      = utils.FFXI_MAP
-	local lead_set = utils.SJIS_LEAD
-	local drop_set = compactCombat and utils.FFXI_MAP_COMBAT_DROP or nil
-	local sbyte    = string.byte
-	local ssub     = string.sub
-	local schar    = string.char
-
-	local out, n = {}, 0
-	local i, len = 1, #text
-
-	while i <= len do
-		local b = sbyte(text, i)
-
-		if b == 0x1E or b == 0x1F then
-			if respectLegacyColors then
-				n = n + 1
-				out[n] = ssub(text, i, i + 1)
-			end
-			i = i + 2
-
-		elseif b == 0x7F then
-			local b2 = sbyte(text, i + 1) or 0
-			if b2 >= 0x31 and b2 <= 0x37 then
-				local b3 = sbyte(text, i + 2) or 0
-				if b3 >= 0x01 and b3 <= 0x06 then
-					i = i + 3
-				else
-					i = i + 2
-				end
-			else
-				i = i + 2
-			end
-
-		elseif b >= 0x20 and b <= 0x7E then
-			n = n + 1
-			out[n] = schar(b)
-			i = i + 1
-
-		elseif lead_set[b] then
-			local pair = ssub(text, i, i + 1)
-			if not (drop_set and drop_set[pair]) then
-				local mapped = map[pair]
-				if mapped then
-					n = n + 1
-					out[n] = mapped
-				end
-			end
-			i = i + 2
-
-		elseif b >= 0xF0 then
-			n = n + 1
-			out[n] = ssub(text, i, i + 3)
-			i = i + 4
-
-		else
-			i = i + 1
-		end
-	end
-
-	return table.concat(out)
+    return textcodec.decode(text, utils.FFXI_MAP,
+        compactCombat and utils.FFXI_MAP_COMBAT_DROP or nil, respectLegacyColors)
 end
 
 -- Translate any preserved 2-byte legacy color escapes (\x1E\NN or

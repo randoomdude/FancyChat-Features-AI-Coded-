@@ -90,8 +90,8 @@ function M.draw()
 		--   1. Hovering an aux marker '[link]' -> click opens the URL
 		--   2. Hovering anywhere else on the line -> highlight bar
 		-------------------------------------------------------------
+		fcw[3].HoverLine = -1
 		if IsRectHovered(ro.BigMode.settings, 0) then
-			fcw[3].HoverLine = -1
 			local lineOffsetBase = (fcw[3].BG_H / 120) + allSettings.fontSettings.font_height
 			for HL_i = 0, ChatLines - 1 do
 				local lineOffset = lineOffsetBase + HL_i * allSettings.fontSettings.font_height
@@ -146,7 +146,8 @@ function M.draw()
 			end
 		end
 
-		if fcw[3].HoverLine > 0 and imgui.IsMouseClicked(ImGuiMouseButton_Left) then
+		if fcw[3].HoverLine > 0 and imgui.IsMouseClicked(ImGuiMouseButton_Left)
+			and (imgui.GetIO().KeyAlt or imgui.GetIO().KeyShift) then
 			fcw[3].Clicking = true
 		end
 
@@ -192,22 +193,21 @@ function M.draw()
 
 			if fcw[3].Clicking and imgui.IsMouseReleased(ImGuiMouseButton_Left) then
 				fcw[3].Clicking = false
-				if copyBufferText ~= nil then
+				if copyBufferText ~= nil and #copyBufferText > 0 then
 					if imgui.GetIO().KeyShift then
 						if #allSettings.Notes < 10 and #copyBufferText > 0 then
 							table.insert(allSettings.Notes, copyBufferText)
 							SaveSettings()
 						end
-					else
+					elseif imgui.GetIO().KeyAlt then
 						utils.SetClipboardText(utils.RevertShiftJIS(copyBufferText))
-						AshitaCore:GetChatManager():QueueCommand(1, '/echo Text successfully copied to clipboard!')
 					end
 				end
 			end
 		end
 
 		if fcw[3].Clicking
-			and (imgui.IsMouseDragging(ImGuiMouseButton_Left) or not imgui.IsMouseDown(ImGuiMouseButton_Left)) then
+			and (fcw[3].HoverLine <= 0 or imgui.IsMouseDragging(ImGuiMouseButton_Left) or not imgui.IsMouseDown(ImGuiMouseButton_Left)) then
 			fcw[3].Clicking = false
 		end
 
