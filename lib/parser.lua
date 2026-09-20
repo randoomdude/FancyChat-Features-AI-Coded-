@@ -1126,7 +1126,7 @@ parseThis = function(e, e_message)
 				textLeft = #newText
 				cutIdx = textcodec.wrap_index(newText, allSettings.chatLineMaxL)
 			else
-				local bytesLine = utils_CountExtraBytesT(newText)
+				local bytesLine = utils_CountExtraBytesT(newText, allSettings.chatLineMaxL)
 				cutIdx = math_min(allSettings.chatLineMaxL + bytesLine[math_min(allSettings.chatLineMaxL, #bytesLine)], textLeft)
 			end
 

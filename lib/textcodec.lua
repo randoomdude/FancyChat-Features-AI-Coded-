@@ -35,6 +35,10 @@ end
 function M.has_japanese(text)
     local i = 1
     while i <= #text do
+        -- Skip ASCII runs in the native string matcher. Most chat lines
+        -- need no UTF-8 decoding just to decide which wrapper to use.
+        i = text:find('[\128-\255]', i)
+        if not i then return false end
         local cp, next_i = M.next_utf8(text, i)
         if japanese(cp) then return true end
         i = next_i

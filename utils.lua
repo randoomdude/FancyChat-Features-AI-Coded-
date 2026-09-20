@@ -2228,13 +2228,15 @@ end
 -- UTF-8 byte-counting
 -- ================================================================
 
-utils.CountExtraBytesT = function(s)
+utils.CountExtraBytesT = function(s, max_columns)
 	local i = 1
 	local len = #s
 	local ebTable = {}
 	local extra_bytes = 0
 
-	while i <= len do
+	-- The parser only needs the current line's prefix, not the entire
+	-- remaining message. Keep the unbounded form for other callers.
+	while i <= len and (not max_columns or #ebTable < max_columns) do
 		local b = s:byte(i)
 
 		if (b == 0x1E or b == 0x1F) and i + 1 <= len then

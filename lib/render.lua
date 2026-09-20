@@ -1361,12 +1361,9 @@ function M.register()
 						fcw1.PositionLinesRequest[1] = true;
 
 						if allSettings.InstantChatScroll[1] then
-							-- Instant-scroll fast path: drain the entire
-							-- backlog in this frame.  UpdateLines is already
-							-- non-animated; the animation only comes from
-							-- waiting between calls (see ChatShift below).
-							-- Reset ChatShift / ChatShiftScale to idle so a
-							-- later toggle-off resumes cleanly.
+							-- Older pending rows would be overwritten in this
+							-- frame. Only send the final visible page to GDI.
+							b.ChatBufferIdx[1] = math_max(b.ChatBufferIdx[1], b.ChatBufferN[1] - allSettings.ChatLines)
 							local bufRoot = b.ChatBuffer[b.ChatBufferMode[1]][2]
 							while b.ChatBufferIdx[1] < b.ChatBufferN[1] do
 								local bufferIdx = #bufRoot.text - (b.ChatBufferN[1] - b.ChatBufferIdx[1] - 1)
@@ -1880,9 +1877,8 @@ function M.register()
 							fcw2.PositionLinesRequest[1] = true;
 
 							if allSettings.InstantChatScroll[1] then
-								-- Instant-scroll fast path: drain the entire
-								-- backlog in this frame.  Same shape as the
-								-- window-1 fast path above.
+								-- Match window 1: at most one visible page.
+								b.ChatBufferIdx[2] = math_max(b.ChatBufferIdx[2], b.ChatBufferN[2] - allSettings.ChatLines)
 								local bufRoot = b.ChatBuffer[b.ChatBufferMode[2]][2]
 								while b.ChatBufferIdx[2] < b.ChatBufferN[2] do
 									local bufferIdx = #bufRoot.text - (b.ChatBufferN[2] - b.ChatBufferIdx[2] - 1)

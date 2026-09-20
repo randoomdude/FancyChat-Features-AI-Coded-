@@ -220,14 +220,13 @@ function M.register()
 	-- finish loading; the scans that ran during 'load' would resolve
 	-- against a not-yet-final code layout, leaving menu-overlap
 	-- detection silently broken until /addon reload from in-game.
-	-- See the matching d3d_present rescan registration below.
+	-- Revalidate at zone-in, without a second scan on d3d_present.
+	-- Scan deduplication follows BlackmoreKnight/FancyChat 7f82e7b7.
 	-- ---------------------------------------------------------------------
 	local function scan_memory_pointers()
-		dw.testPTR        = ashita.memory.find('FFXiMain.dll', 0, '8B480C85C974??8B510885D274??3B05', 16, 0)
-		dw.testPTR        = ashita.memory.read_uint32(dw.testPTR)
-
-		uiw.UpperMenuPTR  = ashita.memory.find('FFXiMain.dll', 0, '8B480C85C974??8B510885D274??3B05', 16, 0)
-		uiw.UpperMenuPTR  = ashita.memory.read_uint32(uiw.UpperMenuPTR)
+		local menuPattern = ashita.memory.find('FFXiMain.dll', 0, '8B480C85C974??8B510885D274??3B05', 16, 0)
+		local menuPtr = ashita.memory.read_uint32(menuPattern)
+		dw.testPTR, uiw.UpperMenuPTR, uiw.MenuPtr = menuPtr, menuPtr, menuPtr
 
 		local patternAddr        = ashita.memory.find('FFxiMain.dll', 0, '8935????????81C6????????56E8', 0, 0)
 		local pGlobalNowZoneAddr = ashita.memory.read_uint32(patternAddr + 0x02)
@@ -239,13 +238,13 @@ function M.register()
 		uiw.UISizeYPtr = ashita.memory.read_uint32(uiw.UISizeYPtr + 0x01)
 		uiw.UISizeY    = ashita.memory.read_uint32(uiw.UISizeYPtr)
 
-		uiw.UISizeXPtr = ashita.memory.find('FFXiMain.dll', 0, 'BF????????F3??0FBF4C24', 0, 0)
-		uiw.UISizeXPtr = ashita.memory.read_uint32(uiw.UISizeXPtr + 0x01)
+		local sizeXPattern = ashita.memory.find('FFXiMain.dll', 0, 'BF????????F3??0FBF4C24', 0, 0)
+		uiw.UISizeXPtr = ashita.memory.read_uint32(sizeXPattern + 0x01)
 		uiw.UISizeX    = ashita.memory.read_uint32(uiw.UISizeXPtr - 0x10)
 
 		uiw.WinOpenPtr     = ashita.memory.find('FFXiMain.dll', 0, 'E8????????84C075??A1????????85C074??668378', 0, 0)
-		uiw.WinOpenPtr2    = ashita.memory.find('FFXiMain.dll', 0, 'BF????????F3??0FBF4C24', 0, 0)
-		uiw.RefWinOpenPtr2 = ashita.memory.read_uint32(uiw.WinOpenPtr2 + 0x01)
+		uiw.WinOpenPtr2    = sizeXPattern
+		uiw.RefWinOpenPtr2 = uiw.UISizeXPtr
 		uiw.RefWinOpenPtr  = ashita.memory.read_uint32(uiw.WinOpenPtr  + 0x23)
 
 		uiw.DialogPtr   = ashita.memory.find('FFXiMain.dll', 0, 'A0????????53565784C08BF1', 0, 0)
@@ -254,25 +253,9 @@ function M.register()
 		uiw.MenuDescPTR = ashita.memory.find('FFxiMain.dll', 0, 'B9????????50E8????????8BF085F674??8B46', 1, 0)
 
 		uiw.UIVisiblePtr = ashita.memory.find('FFXiMain.dll', 0, '8B4424046A016A0050B9????????E8????????F6D81BC040C3', 0, 0)
-		uiw.MenuPtr      = ashita.memory.find('FFXiMain.dll', 0, '8B480C85C974??8B510885D274??3B05', 16, 0)
-		uiw.MenuPtr      = ashita.memory.read_uint32(uiw.MenuPtr)
 
 		uiw.EventPtr     = ashita.memory.find('FFXiMain.dll', 0, 'A0????????84C0741AA1????????85C0741166A1????????663B05????????0F94C0C3', 0, 0)
 	end
-
-	-- One-shot re-scan latch.  Flipped to true after the d3d_present
-	-- handler below sees a populated player entity and re-runs the
-	-- pattern scans (auto-equivalent of the user typing /addon reload
-	-- once they're logged in).
-	local _pointers_rescanned = false
-	ashita.events.register('d3d_present', 'ptr_rescan_cb', function ()
-		if _pointers_rescanned then return end
-		local pe = GetPlayerEntity()
-		if pe and pe.ServerId and pe.ServerId ~= 0 then
-			scan_memory_pointers()
-			_pointers_rescanned = true
-		end
-	end)
 
 	-- =====================================================================
 	-- Addon load: scan FFXiMain.dll for required pointers, load saved
@@ -282,7 +265,7 @@ function M.register()
 
 		-- Initial scan; may resolve against a not-yet-final code layout
 		-- if Ashita brought the addon up before FFXi's runtime patches
-		-- settled.  The d3d_present-driven re-scan above corrects that.
+		-- settled. The zone-in re-scan below corrects that.
 		scan_memory_pointers()
 
 		-- Settings load + repair ----------------------------------------------
@@ -587,8 +570,8 @@ function M.register()
 			uiw.DialogShown = false
 			-- Late-stage pointer re-scan: 0x000A fires when zone-in
 			-- is fully complete, which on some clients is AFTER any
-			-- client-side patches to FFXiMain.dll have settled.  The load-time scan and
-			-- the d3d_present-based rescan can fire earlier - between
+			-- client-side patches to FFXiMain.dll have settled. The load-time
+			-- scan can fire earlier - between
 			-- character-select and zone-in - and resolve against a
 			-- not-yet-patched code layout.  Rescanning on every zone
 			-- transition guarantees the pointers match the current

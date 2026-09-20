@@ -468,36 +468,20 @@ _G.UpdateLines = M.UpdateLines
 -- Drop the first `count` entries from `buffer`'s parallel arrays.
 -- Used to enforce the per-tab buffer size cap.
 -- ===================================================================
+local BUFFER_COLUMNS = {'text', 'mode', 'color', 'auxText', 'auxColor', 'url'}
+
 function M.BulkRemove(buffer, count)
-	local hasMode = buffer.mode ~= nil
+	if count <= 0 then return end
 	local size = #buffer.text
-	if count >= size then
-		buffer.text     = {}
-		buffer.mode     = {}
-		buffer.color    = {}
-		buffer.auxText  = {}
-		buffer.auxColor = {}
-		buffer.url      = {}
-	else
-		local newText, newMode, newColor, newAuxText, newAuxColor, newUrl = {}, {}, {}, {}, {}, {}
-		for i = count + 1, size do
-			newText    [#newText     + 1] = buffer.text    [i]
-			if hasMode then
-				newMode[#newMode     + 1] = buffer.mode    [i]
-			end
-			newColor   [#newColor    + 1] = buffer.color   [i]
-			newAuxText [#newAuxText  + 1] = buffer.auxText [i]
-			newAuxColor[#newAuxColor + 1] = buffer.auxColor[i]
-			newUrl     [#newUrl      + 1] = buffer.url     [i]
+	count = math.min(count, size)
+	-- Reuse the bounded arrays instead of allocating six replacements on
+	-- every prune. Clear the tail so discarded messages can be collected.
+	for _, key in ipairs(BUFFER_COLUMNS) do
+		local values = buffer[key]
+		if values and #values > 0 then
+			for i = 1, size - count do values[i] = values[i + count] end
+			for i = size - count + 1, size do values[i] = nil end
 		end
-		buffer.text = newText
-		if hasMode then
-			buffer.mode = newMode
-		end
-		buffer.color    = newColor
-		buffer.auxText  = newAuxText
-		buffer.auxColor = newAuxColor
-		buffer.url      = newUrl
 	end
 end
 _G.BulkRemove = M.BulkRemove
@@ -508,33 +492,23 @@ _G.BulkRemove = M.BulkRemove
 -- enabled after the lines were already added to the buffer.
 -- ===================================================================
 function M.BulkRemoveCombat(buffer, line)
-	local hasMode = buffer.mode ~= nil
+	if #line == 0 then return end
 	local size = #buffer.text
-
-	local newText, newMode, newColor, newAuxText, newAuxColor, newUrl = {}, {}, {}, {}, {}, {}
-	local L_i = 1
-	for i = 1, size do
-		if L_i > #line or i ~= line[L_i] then
-			newText    [#newText     + 1] = buffer.text    [i]
-			if hasMode then
-				newMode[#newMode     + 1] = buffer.mode    [i]
+	for _, key in ipairs(BUFFER_COLUMNS) do
+		local values = buffer[key]
+		if values and #values > 0 then
+			local dst, removed = 1, 1
+			for src = 1, size do
+				if src == line[removed] then
+					removed = removed + 1
+				else
+					values[dst] = values[src]
+					dst = dst + 1
+				end
 			end
-			newColor   [#newColor    + 1] = buffer.color   [i]
-			newAuxText [#newAuxText  + 1] = buffer.auxText [i]
-			newAuxColor[#newAuxColor + 1] = buffer.auxColor[i]
-			newUrl     [#newUrl      + 1] = buffer.url     [i]
-		else
-			L_i = L_i + 1
+			for i = dst, size do values[i] = nil end
 		end
 	end
-	buffer.text = newText
-	if hasMode then
-		buffer.mode = newMode
-	end
-	buffer.color    = newColor
-	buffer.auxText  = newAuxText
-	buffer.auxColor = newAuxColor
-	buffer.url      = newUrl
 end
 _G.BulkRemoveCombat = M.BulkRemoveCombat
 
