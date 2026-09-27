@@ -334,7 +334,7 @@ function M.default_settings()
 		SelectedTab          = 'All',
 		SelectedTab2         = 'All',
 		HideCombatFromAll    = T{false},
-		HideFromAll = T{Unity=false, Shout=false, Say=false, Tell=false, Party=false, Linkshell1=false, Linkshell2=false, Emote=false, NPC=false, System=false},
+		HideFromAll = T{Unity=false, Shout=false, Say=false, Tell=false, Party=false, Linkshell1=false, Linkshell2=false, Emote=false, NPC=false, System=false, Transactions=false},
 		SecondChat           = T{false},
 		chatLineMaxL         = 100,
 		ChatLines            = 8,

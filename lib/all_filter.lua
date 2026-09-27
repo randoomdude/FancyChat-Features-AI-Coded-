@@ -10,6 +10,7 @@ M.options = {
     {'Tell', 'Tell'}, {'Party', 'Party'}, {'Linkshell1', 'Linkshell 1'},
     {'Linkshell2', 'Linkshell 2'}, {'Emote', 'Emotes'}, {'NPC', 'NPC dialogue'},
     {'System', 'System messages'},
+    {'Transactions', 'Items / Transactions'},
 }
 
 function M.mode(value)
@@ -41,6 +42,7 @@ function M.hidden(value)
         or (f.Emote == true and mode:find('^emote') ~= nil)
         or (f.NPC == true and mode:find('NPC$') ~= nil)
         or (f.System == true and chat_rules.is_system(mode))
+        or (f.Transactions == true and (mode == 'item' or mode == 'trade' or mode == 'craft'))
 end
 
 function M.rebuild()
